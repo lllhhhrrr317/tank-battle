@@ -267,23 +267,32 @@ function parseMap(mapData) {
     }
   }
   // 基地 - 底部中央
-  const baseC = Math.floor(COLS / 2) - 1;
+  const baseC = Math.floor(COLS / 2) - 2;
   const baseR = ROWS - 2;
   for (let dr = 0; dr < 2; dr++) {
     for (let dc = 0; dc < 4; dc++) {
       grid[baseR + dr][baseC + dc] = TILE.BASE;
     }
   }
-  // 基地周围砖墙
+  // 基地周围砖墙 (只在上方和两侧，下方是地图边界)
+  const inBounds = (r, c) => r >= 0 && r < ROWS && c >= 0 && c < COLS;
+  // 上方墙壁
   for (let dc = -1; dc <= 4; dc++) {
-    if (dc >= 0 && dc < 4) continue;
-    grid[baseR - 1][baseC + dc] = TILE.BRICK;
-    grid[baseR + 2][baseC + dc] = TILE.BRICK;
+    if (inBounds(baseR - 1, baseC + dc)) {
+      grid[baseR - 1][baseC + dc] = TILE.BRICK;
+    }
   }
-  for (let dr = -1; dr <= 2; dr++) {
-    if (dr >= 0 && dr < 2) continue;
-    grid[baseR + dr][baseC - 1] = TILE.BRICK;
-    grid[baseR + dr][baseC + 4] = TILE.BRICK;
+  // 左侧墙壁
+  for (let dr = 0; dr < 2; dr++) {
+    if (inBounds(baseR + dr, baseC - 1)) {
+      grid[baseR + dr][baseC - 1] = TILE.BRICK;
+    }
+  }
+  // 右侧墙壁
+  for (let dr = 0; dr < 2; dr++) {
+    if (inBounds(baseR + dr, baseC + 4)) {
+      grid[baseR + dr][baseC + 4] = TILE.BRICK;
+    }
   }
   return grid;
 }
@@ -342,8 +351,13 @@ class Tank {
       if (tile === TILE.WATER) return false;
     }
     // 与其他坦克碰撞
-    const allTanks = this.isPlayer ? enemies : [player, ...enemies.filter(e => e !== this && e.alive)];
-    if (!this.isPlayer) allTanks.push(player);
+    let allTanks;
+    if (this.isPlayer) {
+      allTanks = enemies.filter(e => e.alive);
+    } else {
+      allTanks = enemies.filter(e => e !== this && e.alive);
+      if (player && player.alive) allTanks.push(player);
+    }
     for (const tank of allTanks) {
       if (!tank || !tank.alive) continue;
       if (tank === this) continue;
@@ -386,8 +400,8 @@ class Tank {
   shoot() {
     if (this.shootCooldown > 0) return null;
     this.shootCooldown = this.shootDelay;
-    const bx = this.cx - 3;
-    const by = this.cy - 3;
+    const bx = this.cx;
+    const by = this.cy;
     return new Bullet(bx, by, this.dir, this.isPlayer);
   }
 
@@ -629,11 +643,14 @@ function drawMap(ctx) {
           ctx.fillStyle = '#2d5a1e';
           ctx.fillRect(x, y, CELL, CELL);
           ctx.fillStyle = '#3a7a28';
+          const seed = r * 1000 + c;
           for (let i = 0; i < 8; i++) {
-            const lx = x + Math.random() * CELL * 0.8 + CELL * 0.1;
-            const ly = y + Math.random() * CELL * 0.8 + CELL * 0.1;
+            const sx = ((seed * 37 + i * 13) % 80) / 100;
+            const sy = ((seed * 53 + i * 17) % 80) / 100;
+            const lx = x + sx * CELL * 0.7 + CELL * 0.15;
+            const ly = y + sy * CELL * 0.7 + CELL * 0.15;
             ctx.beginPath();
-            ctx.arc(lx, ly, 3 + Math.random() * 4, 0, Math.PI * 2);
+            ctx.arc(lx, ly, 2 + ((seed * 7 + i * 11) % 5), 0, Math.PI * 2);
             ctx.fill();
           }
           break;
@@ -811,9 +828,13 @@ function updateEnemyAI(enemy) {
 
 // ==================== 碰撞检测 ====================
 function checkBulletTankCollision(bullet, tank) {
+  const bx = bullet.x - bullet.size / 2;
+  const by = bullet.y - bullet.size / 2;
   return (
-    bullet.x > tank.x && bullet.x < tank.x + tank.size &&
-    bullet.y > tank.y && bullet.y < tank.y + tank.size
+    bx < tank.x + tank.size &&
+    bx + bullet.size > tank.x &&
+    by < tank.y + tank.size &&
+    by + bullet.size > tank.y
   );
 }
 
@@ -1039,6 +1060,9 @@ function update() {
     }
   }
   powerUps = powerUps.filter(p => p.alive);
+
+  // 更新粒子
+  updateParticles();
 
   // 清理
   enemies = enemies.filter(e => e.alive);
